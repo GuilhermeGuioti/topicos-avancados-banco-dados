@@ -1,0 +1,37 @@
+# Banco de teste do Trabalho I — réplica (em MySQL) do schema do rsha/SRHA.
+#
+# Totalmente isolado de outros ambientes da máquina:
+#   - project name próprio  -> rede e volume próprios (rsha-teste_*)
+#   - container próprio     -> rsha-mysql-teste
+#   - porta 3307 no host    -> 3306 é do mysql_local da aula, 5432 do Postgres
+#
+# Versão fixada em 8.0.35 (exigida no enunciado), motor InnoDB.
+#
+# Subir:   docker compose up -d
+# Resetar: docker compose down -v && docker compose up -d   (recarrega initdb/)
+name: rsha-teste
+
+services:
+  db:
+    image: mysql:8.0.35
+    container_name: rsha-mysql-teste
+    command: --character-set-server=utf8mb4 --collation-server=utf8mb4_0900_ai_ci
+    environment:
+      MYSQL_ROOT_PASSWORD: ${RSHA_ROOT_PASSWORD:-root}
+      MYSQL_DATABASE: ${RSHA_DATABASE:-rsha_teste}
+      MYSQL_USER: ${RSHA_USER:-srha}
+      MYSQL_PASSWORD: ${RSHA_PASSWORD:-srha}
+      TZ: America/Sao_Paulo
+    ports:
+      - "${RSHA_PORT:-3307}:3306"
+    volumes:
+      - rsha-teste-dados:/var/lib/mysql
+      - ./initdb:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -uroot -p$$MYSQL_ROOT_PASSWORD --silent"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+
+volumes:
+  rsha-teste-dados:
