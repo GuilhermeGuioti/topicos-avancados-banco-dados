@@ -1,6 +1,4 @@
-# Preencher com matrícula e nome de cada integrante (até 4), um por linha.
-# Formato: <matrícula> - <nome completo>
-0000000 - NOME DO INTEGRANTE 1
-0000000 - NOME DO INTEGRANTE 2
-0000000 - NOME DO INTEGRANTE 3
+2267893 - Augusto Vernilho Liotti
+2266362 - Enzo Ticianeli Dias
+2279900- Alvaro Carvalho Tomazeli
 0000000 - NOME DO INTEGRANTE 4

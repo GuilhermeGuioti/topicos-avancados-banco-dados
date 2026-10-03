@@ -1,12 +1,6 @@
 -- ---------------------------------------------------------------------------
--- Schema do SRHA (Sistema de Relatório de Horas Atividades) em MySQL 8.0 / InnoDB.
--- Implementa fielmente o modelo relacional do Trabalho I (questao_3.pdf):
---   * generalização/especialização Usuario -> Docente | Coordenador, mapeada
---     com uma tabela por subclasse (PK = FK para Usuario);
---   * entidade fraca ItemAtividade, com PK composta (relatorioId, numero);
---   * 10 conjuntos-entidade fortes: Campus, Curso, Disciplina, Usuario,
---     PeriodoLetivo, TipoAtividade, Relatorio, EventoAuditoria, Anexo, Notificacao.
--- Roda no banco definido em MYSQL_DATABASE (padrão do entrypoint).
+-- Schema do SRHA em MySQL 8.0 / InnoDB, conforme o modelo relacional do
+-- Trabalho I. Roda no banco definido em MYSQL_DATABASE (padrão do entrypoint).
 -- ---------------------------------------------------------------------------
 SET NAMES utf8mb4;
 
@@ -51,7 +45,6 @@ CREATE TABLE `Usuario` (
   UNIQUE KEY `Usuario_entraOid_key` (`entraOid`)
 ) ENGINE=InnoDB;
 
--- Subclasses da generalização (sobreposta: o mesmo usuário pode ser as duas).
 CREATE TABLE `Docente` (
   `usuarioId` INT NOT NULL,
   PRIMARY KEY (`usuarioId`),
@@ -76,7 +69,6 @@ CREATE TABLE `PeriodoLetivo` (
   UNIQUE KEY `PeriodoLetivo_ano_semestre_key` (`ano`,`semestre`)
 ) ENGINE=InnoDB;
 
--- Relacionamento ternário Leciona (Docente, Curso, PeriodoLetivo).
 CREATE TABLE `VinculoDocenteCurso` (
   `id`              INT NOT NULL AUTO_INCREMENT,
   `docenteId`       INT NOT NULL,
@@ -92,7 +84,6 @@ CREATE TABLE `VinculoDocenteCurso` (
     ON DELETE RESTRICT ON UPDATE CASCADE
 ) ENGINE=InnoDB;
 
--- Relacionamento ternário Coordena (Coordenador, Curso, PeriodoLetivo).
 CREATE TABLE `VinculoCoordenadorCurso` (
   `id`              INT NOT NULL AUTO_INCREMENT,
   `coordenadorId`   INT NOT NULL,
@@ -137,7 +128,6 @@ CREATE TABLE `Relatorio` (
     ON DELETE RESTRICT ON UPDATE CASCADE
 ) ENGINE=InnoDB;
 
--- Entidade fraca: identificada pelo Relatorio + número de ordem (chave parcial).
 CREATE TABLE `ItemAtividade` (
   `relatorioId`     INT NOT NULL,
   `numero`          INT NOT NULL,
@@ -171,7 +161,6 @@ CREATE TABLE `EventoAuditoria` (
     ON DELETE RESTRICT ON UPDATE CASCADE
 ) ENGINE=InnoDB;
 
--- Comprovantes enviados pelo docente junto ao relatório.
 CREATE TABLE `Anexo` (
   `id`          INT NOT NULL AUTO_INCREMENT,
   `relatorioId` INT NOT NULL,
@@ -183,7 +172,6 @@ CREATE TABLE `Anexo` (
     ON DELETE CASCADE ON UPDATE CASCADE
 ) ENGINE=InnoDB;
 
--- Avisos do fluxo (relatório aguardando avaliação, relatório devolvido).
 CREATE TABLE `Notificacao` (
   `id`          INT NOT NULL AUTO_INCREMENT,
   `usuarioId`   INT NOT NULL,
