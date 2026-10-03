@@ -1,13 +1,43 @@
 -- ---------------------------------------------------------------------------
--- Schema do SRHA (rsha) traduzido de PostgreSQL/Prisma para MySQL 8.0 / InnoDB.
--- Estado final das migrations do rsha (perfil SECRETARIA, sem
--- Curso.avaliadorAlternativoId). Nomes de tabelas e colunas idênticos aos do
--- rsha. Roda no banco definido em MYSQL_DATABASE (padrão do entrypoint).
---
--- Traduções: SERIAL -> INT AUTO_INCREMENT; TEXT com índice único -> VARCHAR(255);
--- TIMESTAMP(3) -> DATETIME(3); enums nativos -> ENUM; @updatedAt -> ON UPDATE.
+-- Schema do SRHA (Sistema de Relatório de Horas Atividades) em MySQL 8.0 / InnoDB.
+-- Implementa fielmente o modelo relacional do Trabalho I (questao_3.pdf):
+--   * generalização/especialização Usuario -> Docente | Coordenador, mapeada
+--     com uma tabela por subclasse (PK = FK para Usuario);
+--   * entidade fraca ItemAtividade, com PK composta (relatorioId, numero);
+--   * 10 conjuntos-entidade fortes: Campus, Curso, Disciplina, Usuario,
+--     PeriodoLetivo, TipoAtividade, Relatorio, EventoAuditoria, Anexo, Notificacao.
+-- Roda no banco definido em MYSQL_DATABASE (padrão do entrypoint).
 -- ---------------------------------------------------------------------------
 SET NAMES utf8mb4;
+
+CREATE TABLE `Campus` (
+  `id`     INT NOT NULL AUTO_INCREMENT,
+  `nome`   VARCHAR(255) NOT NULL,
+  `cidade` VARCHAR(255) NOT NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `Campus_nome_key` (`nome`)
+) ENGINE=InnoDB;
+
+CREATE TABLE `Curso` (
+  `id`       INT NOT NULL AUTO_INCREMENT,
+  `nome`     VARCHAR(255) NOT NULL,
+  `ativo`    BOOLEAN NOT NULL DEFAULT TRUE,
+  `campusId` INT NOT NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `Curso_nome_key` (`nome`),
+  CONSTRAINT `Curso_campusId_fkey` FOREIGN KEY (`campusId`) REFERENCES `Campus`(`id`)
+    ON DELETE RESTRICT ON UPDATE CASCADE
+) ENGINE=InnoDB;
+
+CREATE TABLE `Disciplina` (
+  `id`      INT NOT NULL AUTO_INCREMENT,
+  `nome`    VARCHAR(255) NOT NULL,
+  `cursoId` INT NOT NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `Disciplina_cursoId_nome_key` (`cursoId`,`nome`),
+  CONSTRAINT `Disciplina_cursoId_fkey` FOREIGN KEY (`cursoId`) REFERENCES `Curso`(`id`)
+    ON DELETE RESTRICT ON UPDATE CASCADE
+) ENGINE=InnoDB;
 
 CREATE TABLE `Usuario` (
   `id`       INT NOT NULL AUTO_INCREMENT,
@@ -21,22 +51,19 @@ CREATE TABLE `Usuario` (
   UNIQUE KEY `Usuario_entraOid_key` (`entraOid`)
 ) ENGINE=InnoDB;
 
-CREATE TABLE `UsuarioPerfil` (
-  `id`        INT NOT NULL AUTO_INCREMENT,
+-- Subclasses da generalização (sobreposta: o mesmo usuário pode ser as duas).
+CREATE TABLE `Docente` (
   `usuarioId` INT NOT NULL,
-  `perfil`    ENUM('DOCENTE','COORDENADOR','SECRETARIA') NOT NULL,
-  PRIMARY KEY (`id`),
-  UNIQUE KEY `UsuarioPerfil_usuarioId_perfil_key` (`usuarioId`,`perfil`),
-  CONSTRAINT `UsuarioPerfil_usuarioId_fkey` FOREIGN KEY (`usuarioId`) REFERENCES `Usuario`(`id`)
+  PRIMARY KEY (`usuarioId`),
+  CONSTRAINT `Docente_usuarioId_fkey` FOREIGN KEY (`usuarioId`) REFERENCES `Usuario`(`id`)
     ON DELETE RESTRICT ON UPDATE CASCADE
 ) ENGINE=InnoDB;
 
-CREATE TABLE `Curso` (
-  `id`    INT NOT NULL AUTO_INCREMENT,
-  `nome`  VARCHAR(255) NOT NULL,
-  `ativo` BOOLEAN NOT NULL DEFAULT TRUE,
-  PRIMARY KEY (`id`),
-  UNIQUE KEY `Curso_nome_key` (`nome`)
+CREATE TABLE `Coordenador` (
+  `usuarioId` INT NOT NULL,
+  PRIMARY KEY (`usuarioId`),
+  CONSTRAINT `Coordenador_usuarioId_fkey` FOREIGN KEY (`usuarioId`) REFERENCES `Usuario`(`id`)
+    ON DELETE RESTRICT ON UPDATE CASCADE
 ) ENGINE=InnoDB;
 
 CREATE TABLE `PeriodoLetivo` (
@@ -49,14 +76,15 @@ CREATE TABLE `PeriodoLetivo` (
   UNIQUE KEY `PeriodoLetivo_ano_semestre_key` (`ano`,`semestre`)
 ) ENGINE=InnoDB;
 
+-- Relacionamento ternário Leciona (Docente, Curso, PeriodoLetivo).
 CREATE TABLE `VinculoDocenteCurso` (
   `id`              INT NOT NULL AUTO_INCREMENT,
   `docenteId`       INT NOT NULL,
   `cursoId`         INT NOT NULL,
   `periodoLetivoId` INT NOT NULL,
   PRIMARY KEY (`id`),
-  UNIQUE KEY `VinculoDocenteCurso_docenteId_cursoId_periodoLetivoId_key` (`docenteId`,`cursoId`,`periodoLetivoId`),
-  CONSTRAINT `VinculoDocenteCurso_docenteId_fkey` FOREIGN KEY (`docenteId`) REFERENCES `Usuario`(`id`)
+  UNIQUE KEY `VinculoDocenteCurso_doc_curso_periodo_key` (`docenteId`,`cursoId`,`periodoLetivoId`),
+  CONSTRAINT `VinculoDocenteCurso_docenteId_fkey` FOREIGN KEY (`docenteId`) REFERENCES `Docente`(`usuarioId`)
     ON DELETE RESTRICT ON UPDATE CASCADE,
   CONSTRAINT `VinculoDocenteCurso_cursoId_fkey` FOREIGN KEY (`cursoId`) REFERENCES `Curso`(`id`)
     ON DELETE RESTRICT ON UPDATE CASCADE,
@@ -64,15 +92,19 @@ CREATE TABLE `VinculoDocenteCurso` (
     ON DELETE RESTRICT ON UPDATE CASCADE
 ) ENGINE=InnoDB;
 
+-- Relacionamento ternário Coordena (Coordenador, Curso, PeriodoLetivo).
 CREATE TABLE `VinculoCoordenadorCurso` (
-  `id`            INT NOT NULL AUTO_INCREMENT,
-  `coordenadorId` INT NOT NULL,
-  `cursoId`       INT NOT NULL,
+  `id`              INT NOT NULL AUTO_INCREMENT,
+  `coordenadorId`   INT NOT NULL,
+  `cursoId`         INT NOT NULL,
+  `periodoLetivoId` INT NOT NULL,
   PRIMARY KEY (`id`),
-  UNIQUE KEY `VinculoCoordenadorCurso_coordenadorId_cursoId_key` (`coordenadorId`,`cursoId`),
-  CONSTRAINT `VinculoCoordenadorCurso_coordenadorId_fkey` FOREIGN KEY (`coordenadorId`) REFERENCES `Usuario`(`id`)
+  UNIQUE KEY `VinculoCoordenadorCurso_coord_curso_periodo_key` (`coordenadorId`,`cursoId`,`periodoLetivoId`),
+  CONSTRAINT `VinculoCoordenadorCurso_coordenadorId_fkey` FOREIGN KEY (`coordenadorId`) REFERENCES `Coordenador`(`usuarioId`)
     ON DELETE RESTRICT ON UPDATE CASCADE,
   CONSTRAINT `VinculoCoordenadorCurso_cursoId_fkey` FOREIGN KEY (`cursoId`) REFERENCES `Curso`(`id`)
+    ON DELETE RESTRICT ON UPDATE CASCADE,
+  CONSTRAINT `VinculoCoordenadorCurso_periodoLetivoId_fkey` FOREIGN KEY (`periodoLetivoId`) REFERENCES `PeriodoLetivo`(`id`)
     ON DELETE RESTRICT ON UPDATE CASCADE
 ) ENGINE=InnoDB;
 
@@ -95,9 +127,9 @@ CREATE TABLE `Relatorio` (
   `criadoEm`          DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
   `atualizadoEm`      DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
   PRIMARY KEY (`id`),
-  UNIQUE KEY `Relatorio_docenteId_cursoId_periodoLetivoId_key` (`docenteId`,`cursoId`,`periodoLetivoId`),
+  UNIQUE KEY `Relatorio_doc_curso_periodo_key` (`docenteId`,`cursoId`,`periodoLetivoId`),
   KEY `Relatorio_situacao_cursoId_idx` (`situacao`,`cursoId`),
-  CONSTRAINT `Relatorio_docenteId_fkey` FOREIGN KEY (`docenteId`) REFERENCES `Usuario`(`id`)
+  CONSTRAINT `Relatorio_docenteId_fkey` FOREIGN KEY (`docenteId`) REFERENCES `Docente`(`usuarioId`)
     ON DELETE RESTRICT ON UPDATE CASCADE,
   CONSTRAINT `Relatorio_cursoId_fkey` FOREIGN KEY (`cursoId`) REFERENCES `Curso`(`id`)
     ON DELETE RESTRICT ON UPDATE CASCADE,
@@ -105,18 +137,22 @@ CREATE TABLE `Relatorio` (
     ON DELETE RESTRICT ON UPDATE CASCADE
 ) ENGINE=InnoDB;
 
+-- Entidade fraca: identificada pelo Relatorio + número de ordem (chave parcial).
 CREATE TABLE `ItemAtividade` (
-  `id`              INT NOT NULL AUTO_INCREMENT,
   `relatorioId`     INT NOT NULL,
+  `numero`          INT NOT NULL,
   `tipoAtividadeId` INT NOT NULL,
+  `disciplinaId`    INT NULL,
   `horas`           DECIMAL(5,2) NOT NULL,
   `diaSemana`       ENUM('SEGUNDA','TERCA','QUARTA','QUINTA','SEXTA','SABADO') NOT NULL,
   `horario`         VARCHAR(255) NOT NULL,
   `descricao`       TEXT NOT NULL,
-  PRIMARY KEY (`id`),
+  PRIMARY KEY (`relatorioId`,`numero`),
   CONSTRAINT `ItemAtividade_relatorioId_fkey` FOREIGN KEY (`relatorioId`) REFERENCES `Relatorio`(`id`)
     ON DELETE CASCADE ON UPDATE CASCADE,
   CONSTRAINT `ItemAtividade_tipoAtividadeId_fkey` FOREIGN KEY (`tipoAtividadeId`) REFERENCES `TipoAtividade`(`id`)
+    ON DELETE RESTRICT ON UPDATE CASCADE,
+  CONSTRAINT `ItemAtividade_disciplinaId_fkey` FOREIGN KEY (`disciplinaId`) REFERENCES `Disciplina`(`id`)
     ON DELETE RESTRICT ON UPDATE CASCADE
 ) ENGINE=InnoDB;
 
@@ -133,4 +169,31 @@ CREATE TABLE `EventoAuditoria` (
     ON DELETE RESTRICT ON UPDATE CASCADE,
   CONSTRAINT `EventoAuditoria_usuarioId_fkey` FOREIGN KEY (`usuarioId`) REFERENCES `Usuario`(`id`)
     ON DELETE RESTRICT ON UPDATE CASCADE
+) ENGINE=InnoDB;
+
+-- Comprovantes enviados pelo docente junto ao relatório.
+CREATE TABLE `Anexo` (
+  `id`          INT NOT NULL AUTO_INCREMENT,
+  `relatorioId` INT NOT NULL,
+  `nomeArquivo` VARCHAR(255) NOT NULL,
+  `tamanhoKb`   INT NOT NULL,
+  `enviadoEm`   DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+  PRIMARY KEY (`id`),
+  CONSTRAINT `Anexo_relatorioId_fkey` FOREIGN KEY (`relatorioId`) REFERENCES `Relatorio`(`id`)
+    ON DELETE CASCADE ON UPDATE CASCADE
+) ENGINE=InnoDB;
+
+-- Avisos do fluxo (relatório aguardando avaliação, relatório devolvido).
+CREATE TABLE `Notificacao` (
+  `id`          INT NOT NULL AUTO_INCREMENT,
+  `usuarioId`   INT NOT NULL,
+  `relatorioId` INT NULL,
+  `mensagem`    VARCHAR(255) NOT NULL,
+  `lida`        BOOLEAN NOT NULL DEFAULT FALSE,
+  `criadaEm`    DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+  PRIMARY KEY (`id`),
+  CONSTRAINT `Notificacao_usuarioId_fkey` FOREIGN KEY (`usuarioId`) REFERENCES `Usuario`(`id`)
+    ON DELETE RESTRICT ON UPDATE CASCADE,
+  CONSTRAINT `Notificacao_relatorioId_fkey` FOREIGN KEY (`relatorioId`) REFERENCES `Relatorio`(`id`)
+    ON DELETE CASCADE ON UPDATE CASCADE
 ) ENGINE=InnoDB;

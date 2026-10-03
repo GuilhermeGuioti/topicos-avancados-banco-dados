@@ -1,0 +1,6 @@
+# Preencher com matrícula e nome de cada integrante (até 4), um por linha.
+# Formato: <matrícula> - <nome completo>
+0000000 - NOME DO INTEGRANTE 1
+0000000 - NOME DO INTEGRANTE 2
+0000000 - NOME DO INTEGRANTE 3
+0000000 - NOME DO INTEGRANTE 4

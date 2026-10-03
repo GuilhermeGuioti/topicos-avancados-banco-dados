@@ -26,10 +26,22 @@ INSERT INTO TipoAtividade (descricao) VALUES
   ('Supervisão de Estágio'),
   ('Participação em NBE');
 
-INSERT INTO Curso (nome) VALUES
-  ('Fisioterapia'), ('Nutrição'), ('Educação Física'),
-  ('Enfermagem'), ('Psicologia'), ('Direito'), ('Administração'),
-  ('Ciência da Computação'), ('Sistemas de Informação'), ('Pedagogia');
+INSERT INTO Campus (nome, cidade) VALUES
+  ('Campus Centro', 'Ribeirão Preto'),
+  ('Campus Jardim Sumaré', 'Ribeirão Preto');
+
+-- Cursos alternam entre os dois campi (ids ímpares no 1, pares no 2).
+INSERT INTO Curso (nome, campusId) VALUES
+  ('Fisioterapia', 1), ('Nutrição', 2), ('Educação Física', 1),
+  ('Enfermagem', 2), ('Psicologia', 1), ('Direito', 2), ('Administração', 1),
+  ('Ciência da Computação', 2), ('Sistemas de Informação', 1), ('Pedagogia', 2);
+
+-- 3 disciplinas por curso. A ordem do ORDER BY fixa os ids:
+-- id = (cursoId - 1) * 3 + n, usado mais abaixo para escolher a disciplina do item.
+INSERT INTO Disciplina (nome, cursoId)
+SELECT ELT(s.n, 'Estágio Supervisionado', 'Trabalho de Conclusão de Curso', 'Prática Profissional'), c.id
+FROM Curso c JOIN _seq s ON s.n <= 3
+ORDER BY c.id, s.n;
 
 -- Período corrente (k=0, janela aberta hoje-30d .. hoje+4d, como no seed do rsha)
 -- + 3 semestres anteriores, já encerrados.
@@ -43,9 +55,9 @@ FROM (SELECT n - 1 AS k, (@idx - (n - 1)) DIV 2 AS ano, MOD(@idx - (n - 1), 2) +
 ORDER BY p.k;
 
 -- ---------------------------------------------------------------- usuários --
--- Fixos: o cenário do login de desenvolvimento do rsha (seed.ts).
+-- Fixos: Helena (docente em 2 cursos), Cláudia/Marcos (coordenadores) e Paulo
+-- (coordena e leciona Educação Física: caso de autoaprovação).
 INSERT INTO Usuario (nome, email) VALUES
-  ('Secretaria Acadêmica', 'admin@srha.dev'),
   ('Helena Vasconcelos',   'helena@baraodemaua.br'),
   ('Cláudia Ferrari',      'claudia@baraodemaua.br'),
   ('Marcos Rinaldi',       'marcos@baraodemaua.br'),
@@ -72,30 +84,32 @@ SELECT
   CONCAT('docente', LPAD(n, 3, '0'), '@baraodemaua.br')
 FROM _seq WHERE n <= 30;
 
-INSERT INTO UsuarioPerfil (usuarioId, perfil)
-SELECT id, 'SECRETARIA' FROM Usuario WHERE email = 'admin@srha.dev'
-UNION ALL
-SELECT id, 'DOCENTE' FROM Usuario
- WHERE email IN ('helena@baraodemaua.br', 'paulo@baraodemaua.br') OR email LIKE 'docente%'
-UNION ALL
-SELECT id, 'COORDENADOR' FROM Usuario
+-- Especialização: cada subclasse guarda só a PK herdada de Usuario.
+INSERT INTO Docente (usuarioId)
+SELECT id FROM Usuario
+ WHERE email IN ('helena@baraodemaua.br', 'paulo@baraodemaua.br') OR email LIKE 'docente%';
+
+INSERT INTO Coordenador (usuarioId)
+SELECT id FROM Usuario
  WHERE email IN ('claudia@baraodemaua.br', 'marcos@baraodemaua.br', 'paulo@baraodemaua.br')
     OR email LIKE 'coordenador%';
 
 -- ----------------------------------------------------------------- vínculos --
--- Coordenação: Cláudia/Marcos/Paulo nos 3 primeiros cursos (como no rsha);
--- os 7 restantes ciclam entre os 5 coordenadores extras.
-INSERT INTO VinculoCoordenadorCurso (coordenadorId, cursoId)
-SELECT u.id, c.id
+-- Coordenação, em todos os períodos: Cláudia/Marcos/Paulo nos 3 primeiros
+-- cursos; os 7 restantes ciclam entre os 5 coordenadores extras.
+INSERT INTO VinculoCoordenadorCurso (coordenadorId, cursoId, periodoLetivoId)
+SELECT u.id, c.id, p.id
 FROM Usuario u
 JOIN Curso c ON (u.email = 'claudia@baraodemaua.br' AND c.nome = 'Fisioterapia')
              OR (u.email = 'marcos@baraodemaua.br'  AND c.nome = 'Nutrição')
-             OR (u.email = 'paulo@baraodemaua.br'   AND c.nome = 'Educação Física');
+             OR (u.email = 'paulo@baraodemaua.br'   AND c.nome = 'Educação Física')
+CROSS JOIN PeriodoLetivo p;
 
-INSERT INTO VinculoCoordenadorCurso (coordenadorId, cursoId)
-SELECT u.id, c.id
+INSERT INTO VinculoCoordenadorCurso (coordenadorId, cursoId, periodoLetivoId)
+SELECT u.id, c.id, p.id
 FROM Curso c
 JOIN Usuario u ON u.email = CONCAT('coordenador', LPAD(MOD(c.id - 4, 5) + 1, 2, '0'), '@baraodemaua.br')
+CROSS JOIN PeriodoLetivo p
 WHERE c.id > 3;
 
 -- Docência, em todos os períodos. Helena em 2 cursos com coordenadores
@@ -153,7 +167,8 @@ SELECT x.docenteId, x.cursoId, x.periodoLetivoId, x.avaliadorId,
   x.abertura, LEAST(x.encerramento, NOW(3)), x.id
 FROM (
   SELECT v.id, v.docenteId, v.cursoId, v.periodoLetivoId,
-    (SELECT MIN(vc.coordenadorId) FROM VinculoCoordenadorCurso vc WHERE vc.cursoId = v.cursoId) AS avaliadorId,
+    (SELECT MIN(vc.coordenadorId) FROM VinculoCoordenadorCurso vc
+      WHERE vc.cursoId = v.cursoId AND vc.periodoLetivoId = v.periodoLetivoId) AS avaliadorId,
     p.aberturaSubmissao AS abertura, p.encerramentoSubmissao AS encerramento,
     p.encerramentoSubmissao < NOW(3) AS encerrado,
     MOD(CRC32(CONCAT('entrega', v.id)), 100) AS entrega,
@@ -181,9 +196,12 @@ UPDATE _plano SET
 INSERT INTO Relatorio (docenteId, cursoId, periodoLetivoId, situacao, cargaHorariaTotal, criadoEm, atualizadoEm)
 SELECT docenteId, cursoId, periodoLetivoId, situacao, 0, t0, t0 FROM _plano;
 
--- Itens: 1 a 3 por relatório; a descrição acompanha o tipo da atividade.
-INSERT INTO ItemAtividade (relatorioId, tipoAtividadeId, horas, diaSemana, horario, descricao)
-SELECT i.relatorioId, i.tipo,
+-- Itens: 1 a 3 por relatório (numero = 1..3, a chave parcial da entidade fraca);
+-- a descrição acompanha o tipo da atividade. Itens de supervisão de estágio
+-- (tipo 2) apontam para uma das 3 disciplinas do curso do relatório.
+INSERT INTO ItemAtividade (relatorioId, numero, tipoAtividadeId, disciplinaId, horas, diaSemana, horario, descricao)
+SELECT i.relatorioId, i.numero, i.tipo,
+  IF(i.tipo = 2, (i.cursoId - 1) * 3 + 1 + MOD(CRC32(CONCAT('disc', i.chave)), 3), NULL),
   (4 + MOD(CRC32(CONCAT('horas', i.chave)), 13)) / 2,
   ELT(1 + MOD(CRC32(CONCAT('dia', i.chave)), 6), 'SEGUNDA','TERCA','QUARTA','QUINTA','SEXTA','SABADO'),
   ELT(1 + MOD(CRC32(CONCAT('hor', i.chave)), 6), '07h-09h','09h-11h','14h-16h','16h-18h','19h-21h','21h-22h40'),
@@ -192,7 +210,7 @@ SELECT i.relatorioId, i.tipo,
       'Reunião de acompanhamento de estágio', 'Visita técnica de supervisão de estágio',
       'Participação em reunião do NBE', 'Correção e parecer de relatórios do NBE')
 FROM (
-  SELECT r.id AS relatorioId, CONCAT(r.id, '-', s.n) AS chave,
+  SELECT r.id AS relatorioId, r.cursoId, s.n AS numero, CONCAT(r.id, '-', s.n) AS chave,
          1 + MOD(CRC32(CONCAT('tipo', r.id, '-', s.n)), 3) AS tipo
   FROM Relatorio r
   JOIN _seq s ON s.n <= 1 + MOD(CRC32(CONCAT('qtde', r.id)), 3)
@@ -236,6 +254,28 @@ JOIN (SELECT relatorioId, MAX(ocorridoEm) AS ultimo FROM EventoAuditoria GROUP B
   ON e.relatorioId = r.id
 SET r.cargaHorariaTotal = i.horas,
     r.atualizadoEm      = e.ultimo;
+
+-- Comprovantes: metade dos relatórios já entregues tem 1 anexo.
+INSERT INTO Anexo (relatorioId, nomeArquivo, tamanhoKb, enviadoEm)
+SELECT r.id, CONCAT('comprovante_', r.id, '.pdf'),
+       50 + MOD(CRC32(CONCAT('anexo', r.id)), 950),
+       DATE_ADD(r.criadoEm, INTERVAL 1 HOUR)
+FROM Relatorio r
+WHERE r.situacao <> 'RASCUNHO' AND MOD(CRC32(CONCAT('tem', r.id)), 2) = 0;
+
+-- Notificações: avaliador avisado dos relatórios aguardando; docente avisado
+-- dos devolvidos.
+INSERT INTO Notificacao (usuarioId, relatorioId, mensagem, lida, criadaEm)
+SELECT p.avaliadorId, r.id, 'Relatório aguardando sua avaliação.',
+       MOD(CRC32(CONCAT('lida', r.id)), 2), p.t1
+FROM _plano p JOIN Relatorio r USING (docenteId, cursoId, periodoLetivoId)
+WHERE p.situacao = 'AGUARDANDO_AVALIACAO';
+
+INSERT INTO Notificacao (usuarioId, relatorioId, mensagem, lida, criadaEm)
+SELECT p.docenteId, r.id, 'Relatório devolvido para ajuste.',
+       MOD(CRC32(CONCAT('lida', r.id)), 2), p.tdev
+FROM _plano p JOIN Relatorio r USING (docenteId, cursoId, periodoLetivoId)
+WHERE p.situacao = 'DEVOLVIDO_PARA_AJUSTE';
 
 DROP TABLE _plano;
 DROP TABLE _seq;

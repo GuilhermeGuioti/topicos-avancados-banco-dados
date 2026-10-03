@@ -76,6 +76,7 @@ LEFT JOIN Relatorio r                ON r.docenteId = v.docenteId
                                     AND r.cursoId = v.cursoId
                                     AND r.periodoLetivoId = v.periodoLetivoId
 LEFT JOIN VinculoCoordenadorCurso vc ON vc.cursoId = c.id
+                                    AND vc.periodoLetivoId = p.id
 LEFT JOIN Usuario coord              ON coord.id = vc.coordenadorId
 WHERE NOW() BETWEEN p.aberturaSubmissao AND p.encerramentoSubmissao
   AND (r.id IS NULL OR r.situacao IN ('RASCUNHO', 'DEVOLVIDO_PARA_AJUSTE'))
