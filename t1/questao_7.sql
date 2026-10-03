@@ -22,6 +22,8 @@
 
 DROP TRIGGER IF EXISTS trg_controle_fluxo_situacao;
 
+DELIMITER $$
+
 CREATE TRIGGER trg_controle_fluxo_situacao  
 BEFORE UPDATE ON Relatorio 
 FOR EACH ROW 
@@ -40,7 +42,9 @@ BEGIN
             SET MESSAGE_TEXT = 'Transicao de situacao invalida para o fluxo do relatorio.'; 	
         END IF;
     END IF;
-END;
+END$$
+
+DELIMITER ;
 
 -- 1.1 (PASSA) RASCUNHO -> AGUARDANDO_AVALIACAO.
 UPDATE Relatorio SET situacao = 'AGUARDANDO_AVALIACAO' WHERE id = 45;
@@ -86,6 +90,8 @@ SELECT id, situacao FROM Relatorio WHERE id IN (30, 37, 47);  -- 30 e 37 seguem 
 
 DROP TRIGGER IF EXISTS trg_auditoria_mudanca_situacao;
 
+DELIMITER $$
+
 CREATE TRIGGER trg_auditoria_mudanca_situacao
 AFTER UPDATE ON Relatorio
 FOR EACH ROW
@@ -110,7 +116,9 @@ BEGIN
             END IF;
         END IF;
     END IF;
-END;
+END$$
+
+DELIMITER ;
 
 -- 2.1 (PASSA) submissao gera evento SUBMISSAO do docente (relatorio 20).
 UPDATE Relatorio SET situacao = 'AGUARDANDO_AVALIACAO' WHERE id = 20;
